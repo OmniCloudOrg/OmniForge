@@ -1,256 +1,211 @@
-// omniforge-state/src/main.rs
+//-------------------------------------------------------------------------
+// 
+// 
+//-------------------------------------------------------------------------
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use rusqlite::{Connection, params, OptionalExtension};
-use axum::{
-    routing::{get, post, delete},
-    extract::{Path, State, Json},
-    Router,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
-use serde::{Serialize, Deserialize};
-use tracing::{info, error, Level};
-use chrono::{DateTime, Utc};
+use std::time::Duration;
+use std::fs::File;
+use std::io::BufReader;
+use std::env;
 
-/// Represents a key-value pair in the state store
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct KeyValue {
-    key: String,
-    value: Vec<u8>,
-    version: i64,
-    #[serde(with = "chrono::serde::ts_seconds")]
-    created_at: DateTime<Utc>,
-    #[serde(with = "chrono::serde::ts_seconds")]
-    updated_at: DateTime<Utc>,
+use anyhow::Result;
+use async_trait::async_trait;
+use log::info;
+use russh::client;
+use russh::*;
+use russh_keys::load_secret_key;
+use serde::Deserialize;
+use tokio::io::AsyncWriteExt;
+use tokio::net::ToSocketAddrs;
+
+#[derive(Debug, Deserialize)]
+struct Host {
+    name: String,
+    address: String,
+    port: u16,
+    username: String,
+    password: Option<String>,
+    use_key: bool,
+    key_path: Option<PathBuf>,
 }
 
-/// Response structure for API endpoints
-#[derive(Debug, Serialize)]
-pub struct ApiResponse<T> {
-    success: bool,
-    data: Option<T>,
-    error: Option<String>,
+#[derive(Debug, Deserialize)]
+struct ConfigFile {
+    hosts: Vec<Host>,
 }
 
-/// Custom error type for the state service
-#[derive(Debug, thiserror::Error)]
-pub enum StateError {
-    #[error("Database error: {0}")]
-    Database(#[from] rusqlite::Error),
-    #[error("Key not found: {0}")]
-    NotFound(String),
-    #[error("Internal error: {0}")]
-    Internal(String),
-}
+struct Client {}
 
-impl IntoResponse for StateError {
-    fn into_response(self) -> Response {
-        let (status, message) = match self {
-            StateError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
-            StateError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Database error".into()),
-            StateError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
-        };
+#[async_trait]
+impl client::Handler for Client {
+    type Error = russh::Error;
 
-        let body = Json(ApiResponse::<()> {
-            success: false,
-            data: None,
-            error: Some(message),
-        });
-
-        (status, body).into_response()
+    async fn check_server_key(
+        &mut self,
+        server_public_key: &russh_keys::key::PublicKey,
+    ) -> Result<bool, Self::Error> {
+        Ok(true)
     }
 }
 
-/// StateManager handles all interactions with the SQLite database
-#[derive(Clone)]
-struct StateManager {
-    conn: Arc<Mutex<Connection>>,
+pub struct Session {
+    session: client::Handle<Client>,
 }
 
-impl StateManager {
-    /// Create a new StateManager instance
-    fn new(db_path: &str) -> Result<Self, rusqlite::Error> {
-        // Open SQLite connection
-        let conn = Connection::open(db_path)?;
+impl Session {
+    async fn connect<P: AsRef<Path>, A: ToSocketAddrs>(
+        config: Arc<client::Config>,
+        addrs: A,
+        username: String,
+        key_path: Option<P>,
+        password: Option<String>,
+    ) -> Result<Self> {
+        let sh = Client {};
+        let mut session = client::connect(config, addrs, sh).await?;
 
-        // Initialize database schema
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS state (
-                key TEXT PRIMARY KEY,
-                value BLOB NOT NULL,
-                version INTEGER NOT NULL,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            )",
-            [],
-        )?;
+        if let Some(key_path) = key_path {
+            let key_pair = load_secret_key(key_path, None)?;
+            let auth_res = session
+                .authenticate_publickey(username, Arc::new(key_pair))
+                .await?;
 
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_state_updated_at ON state(updated_at)",
-            [],
-        )?;
+            if !auth_res {
+                anyhow::bail!("Public key authentication failed");
+            }
+        } else if let Some(password) = password {
+            let auth_res = session.authenticate_password(username, password).await?;
+            if !auth_res {
+                anyhow::bail!("Password authentication failed");
+            }
+        } else {
+            anyhow::bail!("No authentication method provided");
+        }
 
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-        })
+        Ok(Self { session })
     }
 
-    /// Get a value from the store
-    async fn get(&self, key: &str) -> Result<Option<KeyValue>, StateError> {
-        let conn = self.conn.lock().await;
-        let result = conn.query_row(
-            "SELECT key, value, version, created_at, updated_at FROM state WHERE key = ?",
-            params![key],
-            |row| {
-                Ok(KeyValue {
-                    key: row.get(0)?,
-                    value: row.get(1)?,
-                    version: row.get(2)?,
-                    created_at: DateTime::from_timestamp(row.get(3)?, 0)
-                        .ok_or_else(|| rusqlite::Error::InvalidParameterName("Invalid timestamp".into()))?,
-                    updated_at: DateTime::from_timestamp(row.get(4)?, 0)
-                        .ok_or_else(|| rusqlite::Error::InvalidParameterName("Invalid timestamp".into()))?,
-                })
-            },
-        ).optional()?;
+    async fn execute_command(&mut self, command: &str) -> Result<u32> {
+        let mut channel = self.session.channel_open_session().await?;
+        channel.exec(true, command).await?;
 
-        Ok(result)
+        let mut code = None;
+        let mut stdout = tokio::io::stdout();
+
+        loop {
+            let Some(msg) = channel.wait().await else {
+                break;
+            };
+            match msg {
+                ChannelMsg::Data { ref data } => {
+                    stdout.write_all(data).await?;
+                    stdout.flush().await?;
+                }
+                ChannelMsg::ExitStatus { exit_status } => {
+                    code = Some(exit_status);
+                }
+                _ => {}
+            }
+        }
+        Ok(code.expect("program did not exit cleanly"))
     }
 
-    /// Put a value into the store
-    async fn put(&self, key: String, value: Vec<u8>) -> Result<KeyValue, StateError> {
-        let conn = self.conn.lock().await;
-        let now = Utc::now();
-        let timestamp = now.timestamp();
-
-        // Get current version if exists
-        let current_version: i64 = conn
-            .query_row(
-                "SELECT version FROM state WHERE key = ?",
-                params![key],
-                |row| row.get(0),
-            )
-            .optional()?
-            .unwrap_or(0);
-
-        let new_version = current_version + 1;
-
-        conn.execute(
-            "INSERT INTO state (key, value, version, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(key) DO UPDATE SET
-                value = excluded.value,
-                version = excluded.version,
-                updated_at = excluded.updated_at",
-            params![key, value, new_version, timestamp, timestamp],
-        )?;
-
-        Ok(KeyValue {
-            key,
-            value,
-            version: new_version,
-            created_at: now,
-            updated_at: now,
-        })
-    }
-
-    /// Delete a value from the store
-    async fn delete(&self, key: &str) -> Result<bool, StateError> {
-        let conn = self.conn.lock().await;
-        let rows = conn.execute("DELETE FROM state WHERE key = ?", params![key])?;
-        Ok(rows > 0)
-    }
-
-    /// List all keys
-    async fn list(&self) -> Result<Vec<String>, StateError> {
-        let conn = self.conn.lock().await;
-        let mut stmt = conn.prepare("SELECT key FROM state")?;
-        let keys = stmt.query_map([], |row| row.get(0))?
-            .collect::<Result<Vec<String>, _>>()?;
-        Ok(keys)
+    async fn close(&mut self) -> Result<()> {
+        self.session
+            .disconnect(Disconnect::ByApplication, "", "English")
+            .await?;
+        Ok(())
     }
 }
 
-async fn get_value(
-    Path(key): Path<String>,
-    State(state_manager): State<StateManager>,
-) -> Result<Json<ApiResponse<KeyValue>>, StateError> {
-    match state_manager.get(&key).await? {
-        Some(value) => Ok(Json(ApiResponse {
-            success: true,
-            data: Some(value),
-            error: None,
-        })),
-        None => Err(StateError::NotFound(key)),
+fn read_config<P: AsRef<Path>>(config_path: P) -> Result<ConfigFile> {
+    let file = File::open(config_path)?;
+    let reader = BufReader::new(file);
+    let config: ConfigFile = serde_json::from_reader(reader)?;
+    Ok(config)
+}
+
+struct Args {
+    config: PathBuf,
+    command: Option<String>,
+}
+
+fn parse_args() -> Result<Args> {
+    let args: Vec<String> = env::args().collect();
+    let mut config = PathBuf::from("config.json");
+    let mut command = None;
+    
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-c" | "--config" => {
+                i += 1;
+                if i < args.len() {
+                    config = PathBuf::from(&args[i]);
+                } else {
+                    anyhow::bail!("Missing value for config argument");
+                }
+            }
+            "-x" | "--command" => {
+                i += 1;
+                if i < args.len() {
+                    command = Some(args[i].clone());
+                } else {
+                    anyhow::bail!("Missing value for command argument");
+                }
+            }
+            _ => {
+                if command.is_none() {
+                    command = Some(args[i].clone());
+                }
+            }
+        }
+        i += 1;
     }
-}
 
-async fn put_value(
-    Path(key): Path<String>,
-    State(state_manager): State<StateManager>,
-    Json(value): Json<Vec<u8>>,
-) -> Result<Json<ApiResponse<KeyValue>>, StateError> {
-    let kv = state_manager.put(key, value).await?;
-    Ok(Json(ApiResponse {
-        success: true,
-        data: Some(kv),
-        error: None,
-    }))
-}
-
-async fn delete_value(
-    Path(key): Path<String>,
-    State(state_manager): State<StateManager>,
-) -> Result<Json<ApiResponse<bool>>, StateError> {
-    let deleted = state_manager.delete(&key).await?;
-    Ok(Json(ApiResponse {
-        success: true,
-        data: Some(deleted),
-        error: None,
-    }))
-}
-
-async fn list_keys(
-    State(state_manager): State<StateManager>,
-) -> Result<Json<ApiResponse<Vec<String>>>, StateError> {
-    let keys = state_manager.list().await?;
-    Ok(Json(ApiResponse {
-        success: true,
-        data: Some(keys),
-        error: None,
-    }))
-}
-
-async fn health() -> impl IntoResponse {
-    StatusCode::OK
+    Ok(Args { config, command })
 }
 
 #[tokio::main]
-async fn main() {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .init();
+async fn main() -> Result<()> {
+    // Parse command line arguments
+    let args = parse_args()?;
+    let config = read_config(args.config)?;
 
-    // Create state manager
-    let state_manager = StateManager::new("omniforge_state.db").expect("Failed to create state manager");
+    for host in config.hosts {
+        println!("Connecting to {}:{}", host.address, host.port);
+        
+        let client_config = client::Config {
+            inactivity_timeout: Some(Duration::from_secs(5)),
+            ..<_>::default()
+        };
 
-    // Create router
-    let app = Router::new()
-        .route("/v1/state/:key", get(get_value))
-        .route("/v1/state/:key", post(put_value))
-        .route("/v1/state/:key", delete(delete_value))
-        .route("/v1/state", get(list_keys))
-        .route("/health", get(health))
-        .with_state(state_manager);
+        let mut ssh = Session::connect(
+            Arc::new(client_config),
+            (host.address, host.port),
+            host.username,
+            host.key_path.as_ref(),
+            host.password,
+        )
+        .await?;
 
-    // Start the server
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
-        .await
-        .unwrap();
-    info!("Starting state service on {}", listener.local_addr().unwrap());
+        // Execute a command to test the connection
+        let cmd = ssh.execute_command("ls -l").await?;
 
-    axum::serve(listener, app).await.unwrap();
+        
+
+        println!("Dir: {}", cmd);
+
+        println!("Connected to {}", host.name);
+
+        if let Some(ref cmd) = args.command {
+            let exit_code = ssh.execute_command(cmd).await?;
+            println!("Exit code for {}: {}", host.name, exit_code);
+        }
+
+        ssh.close().await?;
+    }
+
+    Ok(())
 }

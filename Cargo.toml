@@ -1,23 +1,28 @@
 [package]
-name = "omniforge-state"
+name = "omniforge"
 version = "0.1.0"
 edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
 
 [dependencies]
 tokio = { version = "1.28", features = ["full"] }
-axum = { version = "0.7.8", features = ["macros"] }
+axum = { version = "0.7.9", features = ["macros"] }
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 tower = "0.5.1"
 tower-http = { version = "0.6.1", features = ["trace"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = "1.0.133"
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 anyhow = "1.0"
 thiserror = "2.0.3"
-hyper = "0.14"
+hyper = "1.5.0"
+russh-keys = "0.46.0"
+russh = "0.46.0"
+async-trait = "0.1.83"
+clap = { version = "4.5.21", features = ["derive"] }
+log = "0.4.22"
 
 [features]
 default = []
