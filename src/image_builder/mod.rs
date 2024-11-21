@@ -1,14 +1,35 @@
 // main.rs
-mod common;
-mod ensure_npm;
-mod ensure_docker;
-mod ensure_devcontainers_cli;
-mod ensure_deps;
+mod ensure;
+mod image_gen;
+
+use std::collections::HashMap;
+use ensure::common;
+use ensure::ensure_npm;
+use ensure::ensure_docker;
+use ensure::ensure_devcontainers_cli;
+
+
+
+#[derive(Debug,Serialize,Deserialize)]
+pub struct DevContainer {
+    pub name: String,
+    pub image: String,
+    pub features: HashMap<String,Option<FeatureData>>,
+}
+
+#[derive(Debug,Serialize,Deserialize,Clone)]
+pub struct FeatureData {
+    pub version: Option<String>
+}
+
+
+
 
 use std::io;
 use std::path::Path;
 use std::process::Command;
 use std::fs;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub fn build_devcontainer(devcontainer_path: &Path) -> io::Result<String> {
@@ -79,10 +100,12 @@ fn sanitize_docker_name(name: &str) -> String {
 
 // Example usage in main:
 pub fn main() -> io::Result<()> {
-    let status = ensure_deps::ensure_installations()?;
+    image_gen::gen_devcontainer();
+    let status = ensure::ensure_installations()?;
     println!("Installation status: {:?}", status);
     
-    match build_devcontainer(Path::new("./devcontainer.json")) {
+
+    match build_devcontainer(Path::new("./devcontainer2.json")) {
         Ok(image) => println!("Built container image: {}", image),
         Err(e) => eprintln!("Failed to build container: {}", e)
     }

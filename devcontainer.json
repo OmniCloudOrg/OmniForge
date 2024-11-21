@@ -1,4 +1,21 @@
 {
-	"name": "Rust",
-	"image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye"
+	"name": "Dev Container",
+	"image": "mcr.microsoft.com/devcontainers/base:bullseye",
+	"features": {
+		"ghcr.io/devcontainers/features/rust:latest": { "version": "lts" },
+		"ghcr.io/devcontainers/features/docker-in-docker:2.12.0": {"version": "lts"},
+		"ghcr.io/devcontainers/features/node:latest": {"version": "lts"}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"rust-lang.rust",
+				"ms-vscode.cpptools",
+				"esbenp.prettier-vscode"
+			],
+			"settings": {
+				"terminal.integrated.shell.linux": "/bin/bash"
+			}
+		}
+	}
 }

@@ -5,6 +5,11 @@ use super::ensure_devcontainers_cli::install_devcontainers;
 use std::process::Command;
 use std::io;
 
+pub mod common;
+pub mod ensure_npm;
+pub mod ensure_docker;
+pub mod ensure_devcontainers_cli;
+
 pub fn ensure_installations() -> io::Result<InstallationStatus> {
     let mut status = InstallationStatus {
         node: false,
