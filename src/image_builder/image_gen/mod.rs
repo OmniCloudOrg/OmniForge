@@ -9,10 +9,6 @@ pub fn gen_devcontainer() {
     println!("Generating devcontainer.json...");
    
     let features = scanner::scan("./App");
-    let feature_urls = match features {
-        Ok(_) => "".to_string(),
-        Err(e) => e,
-    };
     
     let featuredata = FeatureData {
         version: Some("1.0".to_string())
@@ -23,8 +19,9 @@ pub fn gen_devcontainer() {
         image: "ubuntu:latest".to_string(),
         features: {
             let mut map = HashMap::new();
-            for url in feature_urls.split(',') {
-                map.insert(url.to_string(), Some(featuredata.clone()));
+            for url in features.unwrap() {
+                map.insert(url.clone(), Some(featuredata.clone()));
+                println!("Feature URL: {}", url);
             }
             map
         },

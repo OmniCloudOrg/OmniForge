@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Ok, Result};
 use lazy_static::lazy_static;
 use phf::phf_map;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::path::PathBuf;
 use std::{collections::HashSet, fs, path::Path, sync::Mutex};
 use std::{fs::DirEntry, io};
@@ -109,7 +109,7 @@ static FILE_TYPES: phf::Map<&'static str, &'static str> = phf_map! {
     "cr" => "ghcr.io/devcontainers/features/crystal:latest",
     "groovy" => "ghcr.io/devcontainers/features/groovy:latest"
 };
-
+#[derive(Debug)]
 pub struct ImageInfo {
     pub file_types: HashSet<String>,
 }
@@ -122,28 +122,45 @@ enum CompileError {
     IoError(#[from] io::Error),
 }
 
-pub fn scan(input_path: &str) -> Result<Vec<&'static str>>  {
+pub fn scan(input_path: &str) -> Result<Vec<String>>  {
+    let mut types: HashSet<String> = HashSet::new();
 
     let path = Path::new(input_path);
-    try_compile(path.into())?;
+    if path.exists() {
+        types = get_file_types(path.into())?;
+        let mut type_urls: Vec<String> = Vec::new();
+        for filetype in types.clone() {
+            match filetype.as_str() {
+                "rs" => type_urls.push("ghcr.io/devcontainers/features/rust:latest".to_string()),
+                _ => ()
+            }
+        }
+        println!("{:?}", type_urls);
+        Ok(type_urls)
+    } else {
+        Err(anyhow!("Path does not exist"))
+    }
+
 }
 
-fn try_compile(path: PathBuf) -> Result<Mutex<ImageInfo>> {
-    let mut file_types = HashSet::new();
-    if path.exists() {
-        walk_dir(&path, test_callback).context("failed to walk directory")?;
-        match FILETYPES.lock() {
-            std::result::Result::Ok(types) => {
-                file_types = types.file_types
-            }
-            Err(e) => {}
-        }
+    
 
-        println!("File types collected.");
-        Ok(file_types)
-    } else {
-        Err(CompileError::InvalidPath(path.display().to_string()).into())
+fn get_file_types(path: PathBuf) -> Result<HashSet<String>> {
+    let mut file_types = HashSet::new();
+    walk_dir(&path, test_callback).context("failed to walk directory")?;
+    match FILETYPES.lock() {
+        std::result::Result::Ok(types) => {
+            println!("{:#?}", types.file_types);
+            file_types = types.file_types.clone()
+        }
+        Err(e) => {
+            println!("{e}")
+        }
     }
+    println!("File types collected.");
+    Ok(file_types)
+
+
 }
 
 fn walk_dir(input_dir: &PathBuf, callback: fn(&DirEntry)) -> Result<()> {
