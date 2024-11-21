@@ -19,6 +19,8 @@ use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
 use tokio::net::ToSocketAddrs;
 
+mod image_builder;
+
 #[derive(Debug, Deserialize)]
 struct Host {
     name: String,
@@ -168,64 +170,68 @@ fn parse_args() -> Result<Args> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Parse command line arguments
-    let args = parse_args()?;
-    let config = read_config(args.config)?;
 
-    const MASTER_RATIO: f32 = 0.2;
-    const WORKER_RATIO: f32 = 0.8;
+    image_builder::main();
 
-    let total_hosts = config.hosts.len();
-    let num_masters = (total_hosts as f32 * MASTER_RATIO).ceil() as usize;
-    let num_workers = (total_hosts as f32 * WORKER_RATIO).floor() as usize;
-
-    let mut masters = Vec::new();
-    let mut workers = Vec::new();
-
-    for (i, host) in config.hosts.iter().enumerate() {
-        if i < num_masters {
-            masters.push(host);
-        } else if i < num_masters + num_workers {
-            workers.push(host);
-        }
-    }
-
-    println!("Masters: {:?}", masters);
-    println!("Workers: {:?}", workers);
-
-    for host in config.hosts {
-        println!("Connecting to {}:{}", host.address, host.port);
-        
-        let client_config = client::Config {
-            inactivity_timeout: Some(Duration::from_secs(5)),
-            ..<_>::default()
-        };
-
-        let mut ssh = Session::connect(
-            Arc::new(client_config),
-            (host.address, host.port),
-            host.username,
-            host.key_path.as_ref(),
-            host.password,
-        )
-        .await?;
-
-        // Execute a command to test the connection
-        let cmd = ssh.execute_command("ls -l /").await?;
-
-
-
-        println!("Dir: {}", cmd);
-
-        println!("Connected to {}", host.name);
-
-        if let Some(ref cmd) = args.command {
-            let exit_code = ssh.execute_command(cmd).await?;
-            println!("Exit code for {}: {}", host.name, exit_code);
-        }
-
-        ssh.close().await?;
-    }
-
+    //// Parse command line arguments
+    //let args = parse_args()?;
+    //let config = read_config(args.config)?;
+   
+    //const MASTER_RATIO: f32 = 0.2;
+    //const WORKER_RATIO: f32 = 0.8;
+   
+    //let total_hosts = config.hosts.len();
+    //let num_masters = (total_hosts as f32 * MASTER_RATIO).ceil() as usize;
+    //let num_workers = (total_hosts as f32 * WORKER_RATIO).floor() as usize;
+   
+    //let mut masters = Vec::new();
+    //let mut workers = Vec::new();
+   
+    //for (i, host) in config.hosts.iter().enumerate() {
+    //    if i < num_masters {
+    //        masters.push(host);
+    //    } else if i < num_masters + num_workers {
+    //        workers.push(host);
+    //    }
+    //}
+   
+    //println!("Masters: {:?}", masters);
+    //println!("Workers: {:?}", workers);
+   
+    //for host in config.hosts {
+    //    println!("Connecting to {}:{}", host.address, host.port);
+    //    
+    //    let client_config = client::Config {
+    //        inactivity_timeout: Some(Duration::from_secs(5)),
+    //        ..<_>::default()
+    //    };
+   
+    //    let mut ssh = Session::connect(
+    //        Arc::new(client_config),
+    //        (host.address, host.port),
+    //        host.username,
+    //        host.key_path.as_ref(),
+    //        host.password,
+    //    )
+    //    .await?;
+   
+    //    // Execute a command to test the connection
+    //    let cmd = ssh.execute_command("ls -l /").await?;
+   
+   
+   
+    //    println!("Dir: {}", cmd);
+   
+    //    println!("Connected to {}", host.name);
+   
+    //    if let Some(ref cmd) = args.command {
+    //        let exit_code = ssh.execute_command(cmd).await?;
+    //        println!("Exit code for {}: {}", host.name, exit_code);
+    //    }
+   
+    //    ssh.close().await?;
+    //}
+  
     Ok(())
+
 }
