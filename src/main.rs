@@ -12,7 +12,6 @@ use std::env;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use log::info;
 use russh::client;
 use russh::*;
 use russh_keys::load_secret_key;
@@ -173,6 +172,27 @@ async fn main() -> Result<()> {
     let args = parse_args()?;
     let config = read_config(args.config)?;
 
+    const MASTER_RATIO: f32 = 0.2;
+    const WORKER_RATIO: f32 = 0.8;
+
+    let total_hosts = config.hosts.len();
+    let num_masters = (total_hosts as f32 * MASTER_RATIO).ceil() as usize;
+    let num_workers = (total_hosts as f32 * WORKER_RATIO).floor() as usize;
+
+    let mut masters = Vec::new();
+    let mut workers = Vec::new();
+
+    for (i, host) in config.hosts.iter().enumerate() {
+        if i < num_masters {
+            masters.push(host);
+        } else if i < num_masters + num_workers {
+            workers.push(host);
+        }
+    }
+
+    println!("Masters: {:?}", masters);
+    println!("Workers: {:?}", workers);
+
     for host in config.hosts {
         println!("Connecting to {}:{}", host.address, host.port);
         
@@ -191,9 +211,9 @@ async fn main() -> Result<()> {
         .await?;
 
         // Execute a command to test the connection
-        let cmd = ssh.execute_command("ls -l").await?;
+        let cmd = ssh.execute_command("ls -l /").await?;
 
-        
+
 
         println!("Dir: {}", cmd);
 
