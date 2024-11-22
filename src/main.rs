@@ -18,8 +18,6 @@ async fn main() -> Result<()> {
     image_builder::main();
     let duration = start.elapsed();
     println!("Took {:?} to build image ", duration);
-
-    
   
     Ok(())
 
