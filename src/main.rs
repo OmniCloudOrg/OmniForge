@@ -1,6 +1,7 @@
 //-------------------------------------------------------------------------
-// 
-// 
+// OmniForge - A Rust-based Free and open-source application deployment
+// and lifecycle management platform built for the modern era or cloud
+// native apps.
 //-------------------------------------------------------------------------
 
 use anyhow::Result;
