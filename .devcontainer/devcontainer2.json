@@ -4,6 +4,9 @@
   "features": {
     "ghcr.io/devcontainers/features/rust:latest": {
       "version": "1.0"
+    },
+    "ghcr.io/devcontainers/features/python:latest": {
+      "version": "1.0"
     }
   }
 }

@@ -7,8 +7,12 @@ use ensure::common;
 use ensure::ensure_npm;
 use ensure::ensure_docker;
 use ensure::ensure_devcontainers_cli;
-
-
+use std::io;
+use std::path::Path;
+use std::process::Command;
+use std::fs;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug,Serialize,Deserialize)]
 pub struct DevContainer {
@@ -21,16 +25,6 @@ pub struct DevContainer {
 pub struct FeatureData {
     pub version: Option<String>
 }
-
-
-
-
-use std::io;
-use std::path::Path;
-use std::process::Command;
-use std::fs;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 pub fn build_devcontainer(devcontainer_path: &Path) -> io::Result<String> {
     let content = fs::read_to_string(devcontainer_path)?;

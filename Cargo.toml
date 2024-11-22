@@ -22,7 +22,7 @@ russh-keys = "0.46.0"
 russh = "0.46.0"
 async-trait = "0.1.83"
 log = "0.4.22"
-phf = { version = "0.11.2", features = ["macros"] }
+phf = { version = "0.11.2", features = ["macros", "serde"] }
 lazy_static = "1.5.0"
 rayon = "1.10.0"
 
