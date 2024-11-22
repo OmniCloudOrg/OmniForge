@@ -20,5 +20,4 @@ async fn main() -> Result<()> {
     println!("Took {:?} to build image ", duration);
   
     Ok(())
-
 }
