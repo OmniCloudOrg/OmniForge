@@ -4,3 +4,4 @@ omniforge_state.db-wal
 omniforge_state.db-shm
 omniforge_state.db
 config.json
+/registry-data

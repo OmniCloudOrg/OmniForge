@@ -26,6 +26,8 @@ pub struct FeatureData {
     pub version: Option<String>
 }
 
+const DOCKER_REGISTRY: &str = "localhost:5000";
+
 pub fn build_devcontainer(devcontainer_path: &Path) -> io::Result<String> {
     let content = fs::read_to_string(devcontainer_path)?;
     let config: Value = serde_json::from_str(&content)?;
@@ -50,7 +52,33 @@ pub fn build_devcontainer(devcontainer_path: &Path) -> io::Result<String> {
             String::from_utf8_lossy(&output.stderr)
         ));
     }
-    Ok(image_name)
+
+    // Tag the image for the local Docker registry
+    let tagged_image = format!("{}/{}", DOCKER_REGISTRY, image_name);
+    let tag_output = Command::new("docker")
+        .args(["tag", &image_name, &tagged_image])
+        .output()?;
+
+    if !tag_output.status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            String::from_utf8_lossy(&tag_output.stderr)
+        ));
+    }
+
+    // Push the image to the local Docker registry
+    let push_output = Command::new("docker")
+        .args(["push", &tagged_image])
+        .output()?;
+
+    if !push_output.status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            String::from_utf8_lossy(&push_output.stderr)
+        ));
+    }
+
+    Ok(tagged_image)
 }
 
 fn generate_image_name(config: &Value, devcontainer_path: &Path) -> io::Result<String> {
