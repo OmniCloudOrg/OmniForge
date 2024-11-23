@@ -2,28 +2,28 @@
 mod ensure;
 mod image_gen;
 
-use std::collections::HashMap;
+use anyhow::Result;
 use ensure::common;
-use ensure::ensure_npm;
-use ensure::ensure_docker;
 use ensure::ensure_devcontainers_cli;
+use ensure::ensure_docker;
+use ensure::ensure_npm;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::fs;
 use std::io;
 use std::path::Path;
 use std::process::Command;
-use std::fs;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use anyhow::Result;
-#[derive(Debug,Serialize,Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DevContainer {
     pub name: String,
     pub image: String,
-    pub features: HashMap<String,Option<FeatureData>>,
+    pub features: HashMap<String, Option<FeatureData>>,
 }
 
-#[derive(Debug,Serialize,Deserialize,Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FeatureData {
-    pub version: Option<String>
+    pub version: Option<String>,
 }
 
 const DOCKER_REGISTRY: &str = "localhost:5000";
@@ -31,10 +31,10 @@ const DOCKER_REGISTRY: &str = "localhost:5000";
 pub fn build_devcontainer(devcontainer_path: &Path) -> io::Result<String> {
     let content = fs::read_to_string(devcontainer_path)?;
     let config: Value = serde_json::from_str(&content)?;
-    
+
     // Generate image name from devcontainer.json configuration
     let image_name = generate_image_name(&config, devcontainer_path)?;
-    
+
     // Build using devcontainer CLI
     let output = Command::new("devcontainer")
         .args([
@@ -42,14 +42,14 @@ pub fn build_devcontainer(devcontainer_path: &Path) -> io::Result<String> {
             "--workspace-folder",
             devcontainer_path.parent().unwrap().to_str().unwrap(),
             "--image-name",
-            &image_name
+            &image_name,
         ])
         .output()?;
 
     if !output.status.success() {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            String::from_utf8_lossy(&output.stderr)
+            String::from_utf8_lossy(&output.stderr),
         ));
     }
 
@@ -62,7 +62,7 @@ pub fn build_devcontainer(devcontainer_path: &Path) -> io::Result<String> {
     if !tag_output.status.success() {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            String::from_utf8_lossy(&tag_output.stderr)
+            String::from_utf8_lossy(&tag_output.stderr),
         ));
     }
 
@@ -74,7 +74,7 @@ pub fn build_devcontainer(devcontainer_path: &Path) -> io::Result<String> {
     if !push_output.status.success() {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            String::from_utf8_lossy(&push_output.stderr)
+            String::from_utf8_lossy(&push_output.stderr),
         ));
     }
 
@@ -92,10 +92,12 @@ fn generate_image_name(config: &Value, devcontainer_path: &Path) -> io::Result<S
             .parent()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .ok_or_else(|| io::Error::new(
-                io::ErrorKind::Other,
-                "Failed to determine container name from path"
-            ))?;
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    "Failed to determine container name from path",
+                )
+            })?;
         sanitize_docker_name(dir_name)
     };
 
@@ -115,7 +117,7 @@ fn sanitize_docker_name(name: &str) -> String {
         .chars()
         .map(|c| match c {
             'a'..='z' | '0'..='9' | '.' | '_' | '-' => c,
-            _ => '-'
+            _ => '-',
         })
         .collect()
 }
@@ -125,12 +127,11 @@ pub fn main() -> Result<()> {
     image_gen::gen_devcontainer();
     let status = ensure::ensure_installations()?;
     println!("Installation status: {:?}", status);
-    
 
     match build_devcontainer(Path::new("./devcontainer2.json")) {
         Ok(image) => println!("Built container image: {}", image),
-        Err(e) => eprintln!("Failed to build container: {}", e)
+        Err(e) => eprintln!("Failed to build container: {}", e),
     }
-    
+
     Ok(())
 }

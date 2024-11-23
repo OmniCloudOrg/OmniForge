@@ -2,30 +2,6 @@
   "name": "My Dev Container",
   "image": "ubuntu:latest",
   "features": {
-    "ghcr.io/devcontainers/features/groovy:latest": {
-      "version": "1.0"
-    },
-    "ghcr.io/devcontainers/features/dotnet:latest": {
-      "version": "1.0"
-    },
-    "ghcr.io/devcontainers/features/swift:latest": {
-      "version": "1.0"
-    },
-    "ghcr.io/devcontainers-contrib/features/powershell:latest": {
-      "version": "1.0"
-    },
-    "ghcr.io/devcontainers/features/python:latest": {
-      "version": "1.0"
-    },
-    "ghcr.io/devcontainers/features/java:latest": {
-      "version": "1.0"
-    },
-    "ghcr.io/devcontainers/features/nasm:latest": {
-      "version": "1.0"
-    },
-    "ghcr.io/devcontainers/features/kotlin:latest": {
-      "version": "1.0"
-    },
     "ghcr.io/devcontainers/features/rust:latest": {
       "version": "1.0"
     }

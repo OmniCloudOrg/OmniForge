@@ -1,5 +1,4 @@
 pub mod scanner;
-use scanner::*;
 use std::collections::HashMap;
 
 use crate::image_builder::{DevContainer, FeatureData};
@@ -7,13 +6,13 @@ use std::fs::File;
 use std::io::Write;
 pub fn gen_devcontainer() {
     println!("Generating devcontainer.json...");
-   
+
     let features = scanner::scan("./App");
-    
+
     let featuredata = FeatureData {
-        version: Some("1.0".to_string())
+        version: Some("1.0".to_string()),
     };
-    
+
     let devcontainer = DevContainer {
         name: "My Dev Container".to_string(),
         image: "ubuntu:latest".to_string(),

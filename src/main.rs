@@ -4,10 +4,9 @@
 //-----------------------------------------------------------------------------
 
 use anyhow::Result;
-use image_builder::DevContainer;
-use std::fs;
 mod image_builder;
 use std::time::Instant;
+pub mod api;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -16,5 +15,6 @@ async fn main() -> Result<()> {
     let duration = start.elapsed();
     println!("Took {:?} to build image ", duration);
 
+    api::listen().await;
     Ok(())
 }

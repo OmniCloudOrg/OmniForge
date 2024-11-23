@@ -1,6 +1,6 @@
+#[allow(dead_code)]
 use anyhow::{anyhow, Context, Result};
 use lazy_static::lazy_static;
-use phf::phf_map;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -32,7 +32,7 @@ lazy_static! {
 
         Some(map)
     };
-} 
+}
 
 #[derive(Debug)]
 pub struct ImageInfo {
@@ -40,6 +40,8 @@ pub struct ImageInfo {
 }
 
 #[derive(Debug, Error)]
+#[allow(dead_code)]
+
 enum CompileError {
     #[error("could not read path: {0}")]
     InvalidPath(String),
@@ -47,14 +49,14 @@ enum CompileError {
     IoError(#[from] io::Error),
 }
 
-pub fn scan(input_path: &str) -> Result<Vec<String>>  {
-    let mut types: HashSet<String> = HashSet::new();
+pub fn scan(input_path: &str) -> Result<Vec<String>> {
+    let mut _types: HashSet<String> = HashSet::new();
 
     let path = Path::new(input_path);
     if path.exists() {
-        types = get_file_types(path.into())?;
+        _types = get_file_types(path.into())?;
         let mut type_urls: Vec<String> = Vec::new();
-        for filetype in types.clone() {
+        for filetype in _types.clone() {
             if let Some(url) = FILE_TYPE_LIST.as_ref().and_then(|map| map.get(&filetype)) {
                 type_urls.push(url.clone());
             }
@@ -64,7 +66,6 @@ pub fn scan(input_path: &str) -> Result<Vec<String>>  {
     } else {
         Err(anyhow!("Path does not exist"))
     }
-
 }
 
 fn get_file_types(path: PathBuf) -> Result<HashSet<String>> {
@@ -98,17 +99,19 @@ fn walk_dir(input_dir: &PathBuf, callback: fn(&DirEntry)) -> Result<()> {
         })
         .collect();
 
-    entries.par_iter().try_for_each::<_, Result<(), anyhow::Error>>(|entry: &DirEntry| {
-        let path = entry.path();
-        if path.is_dir() {
-            if let Err(err) = walk_dir(&path, callback) {
-                eprintln!("Error walking directory {}: {}", path.display(), err);
+    entries
+        .par_iter()
+        .try_for_each::<_, Result<(), anyhow::Error>>(|entry: &DirEntry| {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Err(err) = walk_dir(&path, callback) {
+                    eprintln!("Error walking directory {}: {}", path.display(), err);
+                }
+            } else {
+                callback(entry);
             }
-        } else {
-            callback(entry);
-        }
-        Ok(())
-    })?;
+            Ok(())
+        })?;
     Ok(())
 }
 
