@@ -3,7 +3,10 @@
   "image": "ubuntu:latest",
   "features": {
     "ghcr.io/devcontainers/features/rust:latest": {
-      "version": "1.0"
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/node:latest": {
+      "version": "latest"
     }
   }
 }

@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      
+      - name: Check if Cargo.toml version changed
+        id: check
+        run: |
+          CURRENT_VERSION=$(grep -m1 version Cargo.toml | cut -d '"' -f2)
+          git checkout HEAD^1
+          PREVIOUS_VERSION=$(grep -m1 version Cargo.toml | cut -d '"' -f2)
+          if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+
+  create-release:
+      needs: check-version
+      if: needs.check-version.outputs.should_release == 'true'
+      runs-on: ubuntu-latest
+      permissions:
+        contents: write
+      outputs:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+      steps:
+        - uses: actions/checkout@v3
+
+        - name: Create Release
+          id: create_release
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          uses: softprops/action-gh-release@v1
+          with:
+            tag_name: v${{ needs.check-version.outputs.version }}
+            name: Release v${{ needs.check-version.outputs.version }}
+            draft: false
+            prerelease: false
+
+  build-release:
+    needs: [check-version, create-release]
+    if: needs.check-version.outputs.should_release == 'true'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin_path: target/x86_64-unknown-linux-gnu/release/omni
+            asset_name: omni-linux
+          - os: windows-latest 
+            target: x86_64-pc-windows-msvc
+            bin_path: target/x86_64-pc-windows-msvc/release/omni.exe
+            asset_name: omni-windows.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bin_path: target/x86_64-apple-darwin/release/omni
+            asset_name: omni-macos
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: ${{ matrix.target }}
+          
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --target ${{ matrix.target }}
+
+      - name: Generate SHA256
+        shell: bash
+        run: |
+          binary_path="target/${{ matrix.target }}/release/omni"
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            binary_path="target/${{ matrix.target }}/release/omni.exe"
+          fi
+          
+          if [ ! -f "$binary_path" ]; then
+            echo "Binary not found at $binary_path"
+            ls -la target/
+            ls -la target/${{ matrix.target }}/release/
+            exit 1
+          fi
+          
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            sha256sum "$binary_path" > "$binary_path.sha256"
+          else
+            shasum -a 256 "$binary_path" > "$binary_path.sha256"
+          fi
+
+      - name: Upload Binary
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ${{ matrix.bin_path }}
+          asset_name: ${{ matrix.asset_name }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload SHA256
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ${{ matrix.bin_path }}.sha256
+          asset_name: ${{ matrix.asset_name }}.sha256
+          asset_content_type: text/plain

@@ -3,18 +3,11 @@
 // lifecycle management platform built for the modern era or cloud native apps.
 //-----------------------------------------------------------------------------
 
-use anyhow::Result;
+
 mod image_builder;
-use std::time::Instant;
 pub mod api;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let start = Instant::now();
-    image_builder::main()?;
-    let duration = start.elapsed();
-    println!("Took {:?} to build image ", duration);
-
+async fn main()  {
     api::listen().await;
-    Ok(())
 }
