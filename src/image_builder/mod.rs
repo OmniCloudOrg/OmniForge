@@ -143,8 +143,8 @@ pub fn scan_and_build(path: &Path) -> Result<()> {
         return Err(anyhow!("Failed to locate application build path"));
     }
     image_gen::gen_devcontainer(path.to_str().unwrap());
-    // let status = ensure::ensure_installations().context("Failed to enture installation")?;
-    //println!("Installation status: {:?}", status);
+    let status = ensure::ensure_installations().context("Failed to enture installation")?;
+    println!("Installation status: {:?}", status);
 
     println!("Building devcontainer image...");
 
