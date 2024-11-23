@@ -1,7 +1,13 @@
 //-------------------------------------------------------------------------
+<<<<<<< Updated upstream
 // OmniForge - A Rust-based Free and open-source application deployment
 // and lifecycle management platform built for the modern era or cloud
 // native apps.
+=======
+// 
+// 
+//
+>>>>>>> Stashed changes
 //-------------------------------------------------------------------------
 
 use anyhow::Result;
@@ -12,13 +18,10 @@ use std::time::Instant;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let file = fs::read_to_string(".devcontainer/devcontainer.json")?;
-    let container: DevContainer = serde_json::from_str(&file)?;
-    println!("{:#?}",container);
     let start = Instant::now();
-    image_builder::main();
+    image_builder::main()?;
     let duration = start.elapsed();
     println!("Took {:?} to build image ", duration);
-  
+
     Ok(())
 }

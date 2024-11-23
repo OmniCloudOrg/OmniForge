@@ -1,14 +1,12 @@
-use anyhow::{anyhow, Context, Ok, Result};
+use anyhow::{anyhow, Context, Result};
 use lazy_static::lazy_static;
 use phf::phf_map;
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{collections::HashSet, fs, path::Path, sync::Mutex};
 use std::{fs::DirEntry, io};
 use thiserror::Error;
-
-
 
 lazy_static! {
     static ref IS_READY: Mutex<bool> = Mutex::new(false);
@@ -16,15 +14,25 @@ lazy_static! {
         file_types: HashSet::new(),
     });
     static ref FILE_TYPE_LIST: Option<HashMap<String,String>> = {
-        let json_data = fs::read_to_string("langs.json").ok();
-        json_data.and_then(|data| {
-            serde_json::from_str::<HashMap<String, String>>(&data).ok()
-        })
+        let mut map = HashMap::new();
+
+        // Load the first file
+        if let Ok(json_data) = fs::read_to_string("langs.json").context("Failed to read langs.json") {
+            if let Ok(data) = serde_json::from_str::<HashMap<String, String>>(&json_data).context("failed to map langs.json into a hashmap") {
+                map.extend(data);
+            }
+        }
+
+        // Load the second file and override values
+        if let Ok(json_data) = fs::read_to_string(".forge_override.json").context("Failed to read override_langs.json") {
+            if let Ok(data) = serde_json::from_str::<HashMap<String, String>>(&json_data).context("failed to map override_langs.json into a hashmap") {
+                map.extend(data);
+            }
+        }
+
+        Some(map)
     };
 } 
-
-// ill be back if you touch something ill kill you :3 - Caz 11/21/24
-//*glances to both sides*.... "Boop" - Trident 11/21/24
 
 #[derive(Debug)]
 pub struct ImageInfo {
@@ -73,8 +81,6 @@ fn get_file_types(path: PathBuf) -> Result<HashSet<String>> {
     }
     println!("File types collected.");
     Ok(file_types)
-
-
 }
 
 fn walk_dir(input_dir: &PathBuf, callback: fn(&DirEntry)) -> Result<()> {
@@ -92,7 +98,7 @@ fn walk_dir(input_dir: &PathBuf, callback: fn(&DirEntry)) -> Result<()> {
         })
         .collect();
 
-    entries.par_iter().try_for_each(|entry: &DirEntry| {
+    entries.par_iter().try_for_each::<_, Result<(), anyhow::Error>>(|entry: &DirEntry| {
         let path = entry.path();
         if path.is_dir() {
             if let Err(err) = walk_dir(&path, callback) {

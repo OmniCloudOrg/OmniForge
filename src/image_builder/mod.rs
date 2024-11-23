@@ -13,7 +13,7 @@ use std::process::Command;
 use std::fs;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
+use anyhow::Result;
 #[derive(Debug,Serialize,Deserialize)]
 pub struct DevContainer {
     pub name: String,
@@ -121,7 +121,7 @@ fn sanitize_docker_name(name: &str) -> String {
 }
 
 // Example usage in main:
-pub fn main() -> io::Result<()> {
+pub fn main() -> Result<()> {
     image_gen::gen_devcontainer();
     let status = ensure::ensure_installations()?;
     println!("Installation status: {:?}", status);
