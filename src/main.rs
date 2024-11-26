@@ -3,8 +3,8 @@
 // lifecycle management platform built for the modern era or cloud native apps.
 //-----------------------------------------------------------------------------
 
-
 mod image_builder;
+mod autoscalar;
 pub mod api;
 
 #[tokio::main]
