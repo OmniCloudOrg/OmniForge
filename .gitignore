@@ -5,3 +5,12 @@ omniforge_state.db-shm
 omniforge_state.db
 config.json
 /registry-data
+    
+*.iso
+*.lock
+/packer_cache
+*.vmdk
+*.ovf
+*.gz
+*.zip
+packer.exe

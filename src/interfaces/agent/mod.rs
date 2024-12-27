@@ -15,12 +15,12 @@ pub enum ClientError {
 }
 
 #[derive(Debug)]
-pub struct VmClient {
+pub struct ContainerClient {
     client: Client,
     base_url: String,
 }
 
-impl VmClient {
+impl ContainerClient {
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             client: Client::new(),

@@ -17,3 +17,6 @@ tabled = "0.17.0"
 tar = "0.4.43"
 reqwest = { version = "0.12.9", features = ["multipart"] }
 tokio = { version = "1.41.1", features = ["macros", "rt-multi-thread", "fs"] }
+walkdir = "2.5.0"
+ignore = "0.4.23"
+pathdiff = "0.2.3"

@@ -6,11 +6,13 @@ use dialoguer::{Confirm, Input, Select};
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use reqwest::multipart::{Form, Part};
-use std::{fs::File, io::Write, path::Path};
+use std::{fs::File, path::Path};
 use std::{thread, time::Duration};
 use tabled::Table;
 use tar::Builder;
-use tokio::fs;
+use tokio::{fs, task};
+use ignore::WalkBuilder;
+use pathdiff;
 
 impl PremiumUI {
     pub async fn deploy_interactive(&self) -> Result<()> {
@@ -55,10 +57,6 @@ impl PremiumUI {
         // Upload tarball
         self.upload_tarball(&tarball_path, environments[env_selection]).await
             .context("Failed to upload tarball")?;
-
-        // Clean up tarball
-        fs::remove_file(&tarball_path).await
-            .context("Failed to clean up tarball")?;
 
         // Clean up tarball
         fs::remove_file(&tarball_path).await
@@ -125,42 +123,120 @@ impl PremiumUI {
     }
 
     async fn create_tarball(&self, project_path: &str) -> Result<String> {
-        // Get the absolute path and resolve "." to the actual directory name
-        let absolute_path = fs::canonicalize(project_path)
+        // Canonicalize the project path first
+        let project_path = fs::canonicalize(project_path)
             .await
             .context("Failed to resolve project path")?;
         
-        // Get the directory name - use the last component of the path
-        let project_name = absolute_path
+        let project_name = project_path
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or_else(|| {
-                // Fallback to using the last component of the path if we're at root
-                absolute_path
+                project_path
                     .components()
                     .last()
                     .and_then(|comp| comp.as_os_str().to_str())
                     .unwrap_or("project")
             });
     
-        // Create tarball filename
         let tar_gz_path = format!("{}.tar.gz", project_name);
     
-        // Create the tarball file
+        // Create a file for the tarball
         let tar_gz = File::create(&tar_gz_path)?;
         let enc = GzEncoder::new(tar_gz, Compression::default());
-        let mut tar = Builder::new(enc);
+        let builder = std::sync::Arc::new(std::sync::Mutex::new(Builder::new(enc)));
     
-        // Add the directory contents to the tarball
-        tar.append_dir_all(".", project_path)
-            .context("Failed to add directory contents to tarball")?;
+        // Count total files first
+        let mut total_files = 0;
+        let walker = WalkBuilder::new(&project_path)
+            .hidden(false)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .build();
     
-        // Finish creating the tarball
-        tar.into_inner()
-            .context("Failed to finish tarball creation")?
-            .finish()
-            .context("Failed to finish compression")?;
+        for entry in walker.filter_map(|e| e.ok()) {
+            if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                total_files += 1;
+            }
+        }
     
+        let pb = self.create_progress_bar(total_files, "Creating tarball");
+        pb.set_message("Initializing tarball creation");
+    
+        // Process files
+        let mut files_processed = 0;
+        let walker = WalkBuilder::new(&project_path)
+            .hidden(false)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .build();
+    
+        for entry in walker.filter_map(|e| e.ok()) {
+            if let Some(file_type) = entry.file_type() {
+                let entry_path = entry.path().to_path_buf();
+                
+                // Convert the entry path to a relative path using path difference
+                let relative_path = pathdiff::diff_paths(&entry_path, &project_path)
+                    .ok_or_else(|| anyhow::anyhow!("Failed to compute relative path"))?;
+                
+                // Skip root directory
+                if relative_path.as_os_str().is_empty() {
+                    continue;
+                }
+                
+                if file_type.is_dir() {
+                    pb.set_message(format!("Adding directory: {}", relative_path.display()));
+                    
+                    let builder = std::sync::Arc::clone(&builder);
+                    let relative_path = relative_path.clone();
+                    
+                    task::spawn_blocking(move || -> Result<()> {
+                        let mut builder = builder.lock().unwrap();
+                        let mut header = tar::Header::new_ustar();
+                        header.set_entry_type(tar::EntryType::Directory);
+                        header.set_mode(0o755);
+                        header.set_size(0);
+                        builder.append_data(&mut header, relative_path, &[][..])?;
+                        Ok(())
+                    }).await??;
+                } else if file_type.is_file() {
+                    let file_contents = fs::read(&entry_path)
+                        .await
+                        .with_context(|| format!("Failed to read file: {:?}", entry_path))?;
+                    
+                    let builder = std::sync::Arc::clone(&builder);
+                    let relative_path_clone = relative_path.clone();
+                    
+                    task::spawn_blocking(move || -> Result<()> {
+                        let mut builder = builder.lock().unwrap();
+                        let mut header = tar::Header::new_ustar();
+                        header.set_size(file_contents.len() as u64);
+                        header.set_mode(0o644);
+                        builder.append_data(&mut header, relative_path_clone, &file_contents[..])?;
+                        Ok(())
+                    }).await??;
+                    
+                    files_processed += 1;
+                    pb.set_position(files_processed);
+                    pb.set_message(format!("Adding file: {}", relative_path.display()));
+                }
+                
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        }
+    
+        // Finalize the tarball
+        pb.set_message("Finalizing tarball");
+        
+        task::spawn_blocking(move || -> Result<()> {
+            let mut builder = builder.lock().unwrap();
+            builder.finish()?;
+            Ok(())
+        }).await??;
+    
+        pb.finish_with_message("Tarball created successfully ✓");
         Ok(tar_gz_path)
     }
 
@@ -169,7 +245,7 @@ impl PremiumUI {
         let api_url = match environment {
             "Production" => "http://localhost:3030/upload",
             "Staging" => "https://staging-api.example.com/v1/deploy",
-            _ => "http://localhost:3030/upload",
+            _ => "http://localhost:3030/deploy",
         };
 
         let file_content = fs::read(tarball_path).await?;
