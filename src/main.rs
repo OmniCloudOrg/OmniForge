@@ -20,7 +20,7 @@ pub async fn start_server() -> _ {
             address: std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)),
             ..Default::default()
         })
-        .mount("/", routes![api::test])
+        .mount("/", routes![api::test,api::deploy_permissions])
 }
 
 // async fn runtime() -> Result<()> {

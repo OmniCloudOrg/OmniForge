@@ -3,12 +3,28 @@ use rocket::{http::{ContentType, Status}, post, Data};
 use rocket_multipart_form_data::{
     mime, MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
 };
+use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::{self, Cursor},
     path::PathBuf,
     str::FromStr,
 };
+
+#[derive(Debug,Serialize,Deserialize)]
+pub struct DeployPermissions {
+    max_file_count: u64
+}
+impl Default for DeployPermissions {
+    fn default() -> Self {
+        Self { max_file_count: 4500 }
+    }
+}
+#[post("/deploy/permissions")]
+pub fn deploy_permissions() -> Result<rocket::serde::json::Json<DeployPermissions>,Status> {
+
+    Ok(rocket::serde::json::Json(DeployPermissions::default()))
+}
 
 #[post("/deploy", data = "<data>")]
 pub async fn test(content_type: &ContentType, data: Data<'_>) -> Result<Status,Status> {

@@ -31,7 +31,7 @@ tar = "0.4.43"
 reqwest = { version = "0.12.9", features = ["json"] }
 libomni = "0.1.0"
 packer_rs = "0.2.0"
-rocket = "0.5.1"
+rocket = { version = "0.5.1", features = ["json"] }
 rocket-multipart-form-data = "0.10.7"
 zip-extract = { version = "0.2.1", features = ["bzip2", "deflate", "unreserved", "xz", "zstd"] }
 
