@@ -1,144 +1,131 @@
-use tokio::fs;
-use warp::{ Filter, Rejection, Reply };
-use hyper::body::Buf;
-use futures_util::stream::TryStreamExt;
-use tracing::{ info, error, Level };
-use tracing_subscriber;
-use crate::image_builder;
+mod deploy;
+use rocket::{http::{ContentType, Status}, post, Data};
+use rocket_multipart_form_data::{
+    mime, MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
+};
+use std::{
+    fs,
+    io::{self, Cursor},
+    path::PathBuf,
+    str::FromStr,
+};
 
-#[derive(Debug)]
-pub enum UploadError {
-    IoError(std::io::Error),
-    MultipartError(warp::Error),
-    ValidationError(String),
-}
+#[post("/deploy", data = "<data>")]
+pub async fn test(content_type: &ContentType, data: Data<'_>) -> Result<Status,Status> {
+    println!("Starting deploy handler");
+    println!("Content-Type: {:?}", content_type);
 
-impl warp::reject::Reject for UploadError {}
+    let mut options = MultipartFormDataOptions::new();
 
-async fn handle_tarball_upload(
-    mut form: warp::multipart::FormData
-) -> Result<impl Reply, Rejection> {
-    // Ensure upload directory exists
-    fs::create_dir_all("./App").await.map_err(|e| {
-        eprintln!("Failed to create directory: {}", e);
-        warp::reject::reject()
-    })?;
+    // Add multiple possible field names to help debug
+    options
+        .allowed_fields
+        .push(MultipartFormDataField::file("media").size_limit(5 * 1024 * 1024 * 1024));
+    options
+        .allowed_fields
+        .push(MultipartFormDataField::file("file").size_limit(5 * 1024 * 1024 * 1024));
+    options
+        .allowed_fields
+        .push(MultipartFormDataField::file("upload").size_limit(5 * 1024 * 1024 * 1024));
 
-    while
-        let Some(part) = form.try_next().await.map_err(|e| {
-            eprintln!("Form error: {}", e);
-            warp::reject::reject()
-        })?
-    {
-        if part.name() == "file" {
-            // Get filename or use default
-            let filename = part.filename().unwrap_or("upload.tar.gz").to_string();
+    // Parse form data with detailed error handling
+    let form_data = match MultipartFormData::parse(content_type, data, options).await {
+        Ok(form) => {
+            println!("Successfully parsed form data");
+            form
+        }
+        Err(e) => {
+            println!("Error parsing form data: {:?}", e);
+            return Err(Status::new(400))
+        }
+    };
 
-            let filepath = format!("./App/{}", filename);
+    // Print ALL available fields for debugging
+    println!("Available fields in form_data:");
+    println!("Raw fields: {:#?}", form_data.raw);
+    println!("Text fields: {:#?}", form_data.texts);
+    println!("Files: {:#?}", form_data.files);
 
-            // Stream the file contents into a buffer
-            let mut buffer = vec![];
-            let mut stream = part.stream();
+    // Check each possible file field
+    for field_name in ["media", "file", "upload"] {
+        if let Some(files) = form_data.files.get(field_name) {
+            println!("Found files in field '{}': {:?}", field_name, files);
 
-            while
-                let Some(chunk) = stream.try_next().await.map_err(|e| {
-                    eprintln!("Stream error: {}", e);
-                    warp::reject::reject()
-                })?
-            {
-                buffer.extend_from_slice(chunk.chunk());
+            if let Some(file) = files.first() {
+                println!("Processing file:");
+                println!("  Path: {:?}", file.path);
+                println!("  Filename: {:?}", file.file_name);
+                println!("  Content-Type: {:?}", file.content_type);
+
+                // Create App directory
+                match fs::create_dir_all("./App") {
+                    Ok(_) => {
+                        let dir = std::path::PathBuf::from_str("./App").unwrap();
+                        let canon_dir = dir.canonicalize().unwrap();
+                        log::info!("Created Directory at {}",canon_dir.display())
+                    },
+                    Err(_) => {
+                        return Err::<Status,Status>(Status::new(500));
+                    },
+                }
+                    
+            
+                // Copy file with size verification
+                let source_size = fs::metadata(&file.path)
+                    .map_err(|_| return Err::<Status,Status>(Status::new(500))).unwrap()
+                    .len();
+
+                println!("Source file size: {} bytes", source_size);
+
+                match fs::copy(&file.path, "./App/app.tar.gz") {
+                    Ok(bytes_written) => {
+                        println!("Successfully wrote {} bytes", bytes_written);
+                        if bytes_written == source_size {
+                            let file_path = PathBuf::from_str("./App/app.tar.gz")
+                                .expect("Failed to get app zip");
+                            let tar_gz = fs::File::open(&file_path).expect("Failed to open tar");
+                            let tar = flate2::read::GzDecoder::new(tar_gz);
+                            let mut archive = tar::Archive::new(tar);
+
+                            archive.unpack("./App").unwrap();
+
+                            // Clean up the tar.gz file
+                            fs::remove_file(&file_path).expect("Fail");
+                            return Ok(Status::new(200));
+                                
+                        } else {
+                            return Err(Status::new(500))
+                        }
+                    }
+                    Err(e) => {
+                        println!("Error copying file: {:?}", e);
+                        return Err(Status::new(500))
+                    }
+                }
+            } else {
+                println!("No valid file found in request");
+                return Err(Status::new(500))
             }
-
-            // Write the buffer to a file
-            tokio::fs::write(&filepath, &buffer).await.map_err(|e| {
-                eprintln!("File write error: {}", e);
-                warp::reject::reject()
-            })?;
-
-            // Open and extract the tar.gz
-            let tar_gz = std::fs::File::open(&filepath).map_err(|e| {
-                eprintln!("Failed to open tar.gz: {}", e);
-                warp::reject::reject()
-            })?;
-
-            let tar = flate2::read::GzDecoder::new(tar_gz);
-            let mut archive = tar::Archive::new(tar);
-
-            archive.unpack("./App").map_err(|e| {
-                eprintln!("Failed to extract archive: {}", e);
-                warp::reject::reject()
-            })?;
-
-            // Clean up the tar.gz file
-            fs::remove_file(&filepath).await.map_err(|e| {
-                eprintln!("Cleanup error: {}", e);
-                warp::reject::reject()
-            })?;
-
-            return Ok(
-                warp::reply::with_status(
-                    "File uploaded and extracted successfully",
-                    warp::http::StatusCode::OK
-                )
-            );
         }
     }
-
-    Err(warp::reject::reject())
+    return Ok::<Status,Status>(Status::new(200));
 }
 
-async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
-    if let Some(upload_error) = err.find::<UploadError>() {
-        let (message, status) = match upload_error {
-            UploadError::IoError(e) => {
-                error!("IO Error during upload: {}", e);
-                (format!("IO Error: {}", e), warp::http::StatusCode::INTERNAL_SERVER_ERROR)
-            }
-            UploadError::MultipartError(e) => {
-                error!("Multipart Error during upload: {}", e);
-                (format!("Upload Error: {}", e), warp::http::StatusCode::BAD_REQUEST)
-            }
-            UploadError::ValidationError(msg) => {
-                error!("Validation Error during upload: {}", msg);
-                (msg.clone(), warp::http::StatusCode::BAD_REQUEST)
-            }
-        };
 
-        Ok(warp::reply::with_status(message, status))
-    } else {
-        error!("Unhandled rejection: {:?}", err);
-        Err(err)
+// Helper function to verify tar file integrity
+fn verify_tar_file(path: &str) -> io::Result<()> {
+    println!("verifying file");
+    use std::process::Command;
+
+    let output = Command::new("tar").arg("-tzf").arg(path).output()?;
+
+    if !output.status.success() {
+        println!("Invalid tar data");
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid tar.gz file",
+        ));
     }
-}
 
-async fn deploy_app(form: warp::multipart::FormData) -> Result<impl Reply, Rejection> {
-    handle_tarball_upload(form).await?;
-    image_builder
-        ::scan_and_build(std::path::Path::new("./App"))
-        .map_err(|e|
-            warp::reject::custom(
-                UploadError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
-            )
-        )?;
-    Ok(warp::reply::with_status("Application deployed successfully", warp::http::StatusCode::OK))
-}
-
-pub async fn listen() {
-    // Initialize logging
-    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
-
-    info!("Initializing upload server");
-
-    // Create the upload route
-    let upload_route = warp
-        ::post()
-        .and(warp::path("deploy"))
-        .and(warp::multipart::form().max_length(10_000_000))
-        .and_then(deploy_app);
-
-    let routes = upload_route.recover(handle_rejection);
-
-    info!("Server starting on http://127.0.0.1:3030");
-
-    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+    Ok(())
 }
