@@ -1,0 +1,113 @@
+{
+    "project": {
+      "name": "rust-app",
+      "language": "rust",
+      "framework": "std",
+      "min_omnibuild_version": "1.0.0"
+    },
+    "build_detection": {
+      "identifiers": [
+        {
+          "type": "file_presence",
+          "pattern": "Cargo.toml",
+          "weight": 10
+        },
+        {
+          "type": "file_presence",
+          "pattern": "src/main.rs",
+          "weight": 5
+        },
+        {
+          "type": "directory_pattern",
+          "pattern": "src/*.rs",
+          "weight": 3
+        }
+      ],
+      "exclude_patterns": ["target/*", "*.bk"]
+    },
+    "dependencies": {
+      "runtime": {
+        "static_analysis": {
+          "package_files": ["Cargo.toml", "Cargo.lock"],
+          "import_patterns": ["^use\\s+[\\w:]+;", "^extern\\s+crate\\s+[\\w]+;"]
+        },
+        "dynamic_analysis": {
+          "track_syscalls": true,
+          "library_tracking": true
+        },
+        "parser_rules": {
+          "cargo_toml": {
+            "sections": ["dependencies", "build-dependencies"],
+            "version_parse": "^version\\s*=\\s*[\"']([\\d\\.]+)[\"']"
+          }
+        }
+      },
+      "system": [
+        {
+          "name": "gcc",
+          "version": ">=7.0.0",
+          "package_manager": "system"
+        },
+        {
+          "name": "openssl-dev",
+          "package_manager": "system"
+        }
+      ],
+      "build_tools": [
+        {
+          "name": "rustc",
+          "version": ">=1.70.0"
+        },
+        {
+          "name": "cargo",
+          "version": ">=1.70.0"
+        }
+      ]
+    },
+    "build_tool": {
+      "name": "cargo",
+      "version_constraints": ">=1.70.0",
+      "installation": {
+        "package_manager": "rustup",
+        "source": "https://sh.rustup.rs"
+      }
+    },
+    "build_commands": {
+      "pre_build": [
+        {
+          "command": "cargo fetch",
+          "condition": "Cargo.lock exists"
+        }
+      ],
+      "build": [
+        {
+          "command": "cargo build",
+          "platform": "all",
+          "flags": ["--release"]
+        }
+      ],
+      "post_build": [
+        {
+          "command": "cargo test",
+          "condition": "tests directory exists"
+        }
+      ],
+      "artifacts": [
+        {
+          "source": "target/release/${BIN_NAME}",
+          "destination": "dist/${BIN_NAME}",
+          "type": "binary"
+        }
+      ]
+    },
+    "test": {
+      "framework": "cargo-test",
+      "commands": ["cargo test"],
+      "patterns": ["tests/**/*.rs", "src/**/*_test.rs"]
+    },
+    "cache": {
+      "directories": ["target/", "~/.cargo/registry/"],
+      "files": ["Cargo.lock"],
+      "ttl": "7d"
+    }
+  }
