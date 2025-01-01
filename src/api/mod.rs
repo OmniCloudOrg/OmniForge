@@ -1,15 +1,11 @@
-mod deploy;
-use rocket::{http::{ContentType, Status}, post, Data};
-use rocket_multipart_form_data::{
-    mime, MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
-};
+use std::fs;
+use std::path::PathBuf;
+use std::str::FromStr;
+use rocket::{get, http::Status, post};
+use rocket::data::Data;
+use rocket::http::ContentType;
+use rocket_multipart_form_data::{MultipartFormData, MultipartFormDataField, MultipartFormDataOptions};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    io::{self, Cursor},
-    path::PathBuf,
-    str::FromStr,
-};
 
 #[derive(Debug,Serialize,Deserialize)]
 pub struct DeployPermissions {
@@ -20,16 +16,17 @@ impl Default for DeployPermissions {
         Self { max_file_count: 4500 }
     }
 }
-#[post("/deploy/permissions")]
+#[get("/deploy/permissions")]
 pub fn deploy_permissions() -> Result<rocket::serde::json::Json<DeployPermissions>,Status> {
 
     Ok(rocket::serde::json::Json(DeployPermissions::default()))
 }
 
-#[post("/deploy", data = "<data>")]
-pub async fn test(content_type: &ContentType, data: Data<'_>) -> Result<Status,Status> {
+#[post("/app/<app_id>/build", data = "<data>")]
+pub async fn build<'a>(app_id: String, content_type: &ContentType, data: Data<'a>) -> Result<Status,Status> {
     println!("Starting deploy handler");
     println!("Content-Type: {:?}", content_type);
+    println!("Build started for app: {:#?}", app_id);
 
     let mut options = MultipartFormDataOptions::new();
 
@@ -43,7 +40,7 @@ pub async fn test(content_type: &ContentType, data: Data<'_>) -> Result<Status,S
     options
         .allowed_fields
         .push(MultipartFormDataField::file("upload").size_limit(5 * 1024 * 1024 * 1024));
-
+            
     // Parse form data with detailed error handling
     let form_data = match MultipartFormData::parse(content_type, data, options).await {
         Ok(form) => {
@@ -69,9 +66,9 @@ pub async fn test(content_type: &ContentType, data: Data<'_>) -> Result<Status,S
 
             if let Some(file) = files.first() {
                 println!("Processing file:");
-                println!("  Path: {:?}", file.path);
-                println!("  Filename: {:?}", file.file_name);
-                println!("  Content-Type: {:?}", file.content_type);
+                println!("    Path: {:?}", file.path);
+                println!("    Filename: {:?}", file.file_name);
+                println!("    Content-Type: {:?}", file.content_type);
 
                 // Create App directory
                 match fs::create_dir_all("./App") {
@@ -85,7 +82,7 @@ pub async fn test(content_type: &ContentType, data: Data<'_>) -> Result<Status,S
                     },
                 }
                     
-            
+    
                 // Copy file with size verification
                 let source_size = fs::metadata(&file.path)
                     .map_err(|_| return Err::<Status,Status>(Status::new(500))).unwrap()
@@ -125,23 +122,4 @@ pub async fn test(content_type: &ContentType, data: Data<'_>) -> Result<Status,S
         }
     }
     return Ok::<Status,Status>(Status::new(200));
-}
-
-
-// Helper function to verify tar file integrity
-fn verify_tar_file(path: &str) -> io::Result<()> {
-    println!("verifying file");
-    use std::process::Command;
-
-    let output = Command::new("tar").arg("-tzf").arg(path).output()?;
-
-    if !output.status.success() {
-        println!("Invalid tar data");
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid tar.gz file",
-        ));
-    }
-
-    Ok(())
 }
