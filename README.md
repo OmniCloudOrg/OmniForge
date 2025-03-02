@@ -173,7 +173,7 @@ omniforge/
 
 ## Support
 
-- Documentation: [Link to docs]
+- Documentation: [Link to docs coming soon]
 - Issue Tracker: [https://github.com/omnicloudorg/projects](https://github.com/orgs/OmniCloudOrg/projects/1/)
 - Community Forum: [https://github.com/omnicloudorg/discussions](https://github.com/omnicloudorg/discussions)
 
