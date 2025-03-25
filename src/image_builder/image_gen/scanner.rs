@@ -18,14 +18,14 @@ lazy_static! {
 
         // Load the first file
         if let Ok(json_data) = fs::read_to_string("langs.json").context("Failed to read langs.json") {
-            if let Ok(data) = serde_json::from_str::<HashMap<String, String>>(&json_data).context("failed to map langs.json into a hashmap") {
+            if let Ok(data) = serde_json5::from_str::<HashMap<String, String>>(&json_data).context("failed to map langs.json into a hashmap") {
                 map.extend(data);
             }
         }
 
         // Load the second file and override values
         if let Ok(json_data) = fs::read_to_string(".forge_override.json").context("Failed to read override_langs.json") {
-            if let Ok(data) = serde_json::from_str::<HashMap<String, String>>(&json_data).context("failed to map override_langs.json into a hashmap") {
+            if let Ok(data) = serde_json5::from_str::<HashMap<String, String>>(&json_data).context("failed to map override_langs.json into a hashmap") {
                 map.extend(data);
             }
         }

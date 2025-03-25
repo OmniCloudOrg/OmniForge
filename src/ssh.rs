@@ -123,7 +123,7 @@ impl Session {
 fn read_config<P: AsRef<Path>>(config_path: P) -> Result<ConfigFile> {
     let file = File::open(config_path)?;
     let reader = BufReader::new(file);
-    let config: ConfigFile = serde_json::from_reader(reader)?;
+    let config: ConfigFile = serde_json5::from_reader(reader)?;
     Ok(config)
 }
 

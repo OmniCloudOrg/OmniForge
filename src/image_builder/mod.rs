@@ -37,7 +37,7 @@ pub fn build_devcontainer(devcontainer_path: &Path) -> Result<String> {
     let content = fs
         ::read_to_string(devcontainer_path)
         .context("failed to read the path to the dev container")?;
-    let config: Value = serde_json
+    let config: Value = serde_json5
         ::from_str(&content)
         .context("Failed to serialize 'App/.devcontainer/devcontainer.json'")?;
 
