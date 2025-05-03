@@ -294,23 +294,35 @@ impl AutoScaler for ExampleScaler {
     }
     
     fn reallocate_memory(&self, megabytes: u64) {
-        let mut metrics = self.metrics.lock().unwrap();
-        metrics.ram_usage = Some(megabytes);
+        if let Ok(mut metrics) = self.metrics.lock() {
+            metrics.ram_usage = Some(megabytes);
+        } else {
+            eprintln!("Failed to acquire lock for reallocate_memory");
+        }
     }
     
     fn reallocate_cpu(&self, percentage: u64) {
-        let mut metrics = self.metrics.lock().unwrap();
-        metrics.cpu_load = Some(percentage);
+        if let Ok(mut metrics) = self.metrics.lock() {
+            metrics.cpu_load = Some(percentage);
+        } else {
+            eprintln!("Failed to acquire lock for reallocate_cpu");
+        }
     }
     
     fn reallocate_disk_bandwidth(&self, megabytes_per_second: u64) {
-        let mut metrics = self.metrics.lock().unwrap();
-        metrics.disk_bandwidth = Some(megabytes_per_second);
+        if let Ok(mut metrics) = self.metrics.lock() {
+            metrics.disk_bandwidth = Some(megabytes_per_second);
+        } else {
+            eprintln!("Failed to acquire lock for reallocate_disk_bandwidth");
+        }
     }
     
     fn reallocate_network_bandwidth(&self, megabytes_per_second: u64) {
-        let mut metrics = self.metrics.lock().unwrap();
-        metrics.network_latency = Some(megabytes_per_second);
+        if let Ok(mut metrics) = self.metrics.lock() {
+            metrics.network_latency = Some(megabytes_per_second);
+        } else {
+            eprintln!("Failed to acquire lock for reallocate_network_bandwidth");
+        }
     }
 }
 
