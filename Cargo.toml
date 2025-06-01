@@ -30,7 +30,7 @@ flate2 = "1.0.35"
 futures-util = "0.3.31"
 tar = "0.4.43"
 reqwest = { version = "0.12.9", features = ["json"] }
-libomni = "0.2.3"
+libomni = { path = "../LibOmni" }
 packer_rs = "0.2.0"
 rocket = { version = "0.5.1", features = ["json"] }
 rocket-multipart-form-data = "0.10.7"
